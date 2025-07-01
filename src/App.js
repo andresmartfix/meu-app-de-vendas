@@ -83,7 +83,6 @@ const SmartFix = ({ message, type, onClose }) => {
 
 function App() {
   const [db, setDb] = useState(null);
-  // Removido 'auth' do estado, pois 'firebaseAuth' é usado diretamente no useEffect
   const [userId, setUserId] = useState(null);
   const [sales, setSales] = useState([]);
   const [newSaleAmount, setNewSaleAmount] = useState('');
@@ -98,8 +97,6 @@ function App() {
   const [displayDate, setDisplayDate] = useState(new Date()); // For 'daily' view
   const [displayMonth, setDisplayMonth] = useState(new Date().getMonth()); // For 'monthly' view
   const [displayYear, setDisplayYear] = useState(new Date().getFullYear()); // For 'monthly' and 'yearly' view
-  // 'displayWeek' removido pois não é utilizado diretamente no JSX ou lógica de filtragem
-  // const [displayWeek, setDisplayWeek] = useState(getWeekNumber(new Date())); // For 'weekly' view
 
   const [selectedSaleDate, setSelectedSaleDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -143,28 +140,44 @@ function App() {
   // Initialize Firebase and set up authentication
   useEffect(() => {
     try {
-      const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+      // --- INÍCIO DA ALTERAÇÃO PARA CONFIGURAÇÃO DO FIREBASE EM PRODUÇÃO ---
+      // MUITO IMPORTANTE: Substitua estes valores pelos detalhes do SEU projeto Firebase.
+      // Você pode encontrá-los no Console do Firebase > Configurações do Projeto > Seus aplicativos.
+      const firebaseConfig = {
+        apiKey: "SUA_API_KEY", // Substitua pela sua chave de API
+        authDomain: "SEU_AUTH_DOMAIN", // Substitua pelo seu domínio de autenticação
+        projectId: "SEU_PROJECT_ID", // Substitua pelo ID do seu projeto
+        storageBucket: "SEU_STORAGE_BUCKET", // Substitua pelo seu bucket de armazenamento
+        messagingSenderId: "SEU_MESSAGING_SENDER_ID", // Substitua pelo seu ID de remetente de mensagens
+        appId: "SEU_APP_ID" // Substitua pelo ID do seu aplicativo
+      };
+
+      // Verificação para depuração: Se a API Key ainda for o placeholder, mostre um erro.
+      if (firebaseConfig.apiKey === "SUA_API_KEY") {
+        console.error("ERRO DE CONFIGURAÇÃO DO FIREBASE: Por favor, substitua os placeholders em firebaseConfig no src/App.js pelos seus dados reais do Firebase.");
+        showSmartFix("Erro de configuração do Firebase. Por favor, atualize sua API Key.", 'error');
+        setLoading(false);
+        return; // Sai da função para evitar a inicialização com API Key inválida
+      }
+      // --- FIM DA ALTERAÇÃO PARA CONFIGURAÇÃO DO FIREBASE EM PRODUÇÃO ---
+
       const app = initializeApp(firebaseConfig);
       const firestore = getFirestore(app);
       const firebaseAuth = getAuth(app);
 
       setDb(firestore);
-      // Removido setAuth(firebaseAuth); pois 'auth' não é mais um estado necessário
-      // showSmartFix(`Bem-vindo, utilizador ${user.uid.substring(0, 8)}...`, 'info');
 
       onAuthStateChanged(firebaseAuth, async (user) => {
         if (user) {
           setUserId(user.uid);
           showSmartFix(`Bem-vindo, utilizador ${user.uid.substring(0, 8)}...`, 'info');
         } else {
+          // No ambiente de produção, geralmente fazemos login anónimamente se não houver token.
+          // O __initial_auth_token é específico do ambiente Canvas e não é usado aqui.
           try {
-            if (typeof __initial_auth_token !== 'undefined') {
-              await signInWithCustomToken(firebaseAuth, __initial_auth_token);
-            } else {
-              await signInAnonymously(firebaseAuth);
-            }
+            await signInAnonymously(firebaseAuth);
           } catch (signInError) {
-            console.error("Erro ao iniciar sessão no Firebase:", signInError);
+            console.error("Erro ao iniciar sessão anónima no Firebase:", signInError);
             showSmartFix("Não foi possível autenticar. Tente novamente mais tarde.", 'error');
           } finally {
             setLoading(false);
@@ -184,7 +197,12 @@ function App() {
       setLoading(true);
       setSmartFixMessage(''); // Clear previous messages
       try {
-        const salesCollectionRef = collection(db, `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'}/users/${userId}/dailySales`);
+        // --- INÍCIO DA ALTERAÇÃO PARA ID DO APLICATIVO EM PRODUÇÃO ---
+        // O __app_id é específico do ambiente Canvas. Use um ID de aplicativo fixo para produção.
+        const appIdForCollection = 'app-id-vendas'; // ID fixo para o seu aplicativo em produção
+        // --- FIM DA ALTERAÇÃO PARA ID DO APLICATIVO EM PRODUÇÃO ---
+
+        const salesCollectionRef = collection(db, `artifacts/${appIdForCollection}/users/${userId}/dailySales`);
         // Order by timestamp to get the latest sales by their actual date
         const q = query(salesCollectionRef, orderBy('timestamp', 'asc')); // Order by ascending for chart display
 
@@ -269,12 +287,17 @@ function App() {
       const amount = parseFloat(newSaleAmount);
       // Create a Date object from the selectedSaleDate string for the timestamp
       const saleDateTime = new Date(selectedSaleDate + 'T12:00:00'); // Adding T12:00:00 to avoid timezone issues with midnight
-      const salesCollectionRef = collection(db, `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'}/users/${userId}/dailySales`);
+      
+      // --- INÍCIO DA ALTERAÇÃO PARA ID DO APLICATIVO EM PRODUÇÃO ---
+      const appIdForCollection = 'app-id-vendas'; // ID fixo para o seu aplicativo em produção
+      // --- FIM DA ALTERAÇÃO PARA ID DO APLICATIVO EM PRODUÇÃO ---
+
+      const salesCollectionRef = collection(db, `artifacts/${appIdForCollection}/users/${userId}/dailySales`);
 
       await addDoc(salesCollectionRef, {
         amount: amount,
         timestamp: Timestamp.fromDate(saleDateTime), // Store as Firestore Timestamp
-        date: selectedSaleDate // Store date as YYYY-MM-DD string
+        date: selectedSaleDate // Store date as AAAA-MM-DD string
       });
       setNewSaleAmount('');
       // Update displayDate and viewMode to show the newly added sale's day
@@ -311,7 +334,7 @@ function App() {
 
       switch (viewMode) {
         case 'daily':
-          // Compare directly using the YYYY-MM-DD string
+          // Compare directly using the AAAA-MM-DD string
           const currentDayString = new Date(displayDate).toISOString().split('T')[0];
           return sale.date === currentDayString;
         case 'weekly':
@@ -337,12 +360,12 @@ function App() {
 
     filteredSales.forEach(sale => {
       const saleDate = sale.timestamp ? new Date(sale.timestamp.toDate()) : new Date(sale.date);
-      let key; // Key for aggregation (e.g., 'YYYY-MM-DD', 'YYYY-Wx', 'YYYY-MM')
-      let label; // Label for X-axis (e.g., 'Jan 01', 'Semana 1', 'Janeiro')
+      let key; // Chave para agregação (ex: 'AAAA-MM-DD', 'AAAA-Sx', 'AAAA-MM')
+      let label; // Rótulo para o eixo X (ex: 'Jan 01', 'Semana 1', 'Janeiro')
 
       switch (viewMode) {
         case 'daily':
-          key = sale.date; // YYYY-MM-DD
+          key = sale.date; // AAAA-MM-DD
           label = new Date(sale.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
           break;
         case 'weekly':
@@ -351,19 +374,19 @@ function App() {
           label = `Semana ${weekNumber}`;
           break;
         case 'monthly':
-          // Aggregate by week number within the month, and create date range labels
+          // Agrega por número da semana dentro do mês, e cria rótulos de intervalo de datas
           const monthWeekNumber = getWeekNumber(saleDate);
           const startOfPeriodWeek = getStartOfWeek(saleDate);
           const endOfPeriodWeek = getEndOfWeek(saleDate);
 
-          // Ensure the week's start/end dates are within the current display month
+          // Garante que as datas de início/fim da semana estejam dentro do mês de exibição atual
           const monthStart = new Date(displayYear, displayMonth, 1);
           const monthEnd = new Date(displayYear, displayMonth + 1, 0, 23, 59, 59, 999);
 
           let displayStart = startOfPeriodWeek;
           let displayEnd = endOfPeriodWeek;
 
-          // Adjust start/end of the week to be within the month's boundaries
+          // Ajusta o início/fim da semana para estar dentro dos limites do mês
           if (startOfPeriodWeek < monthStart) {
               displayStart = monthStart;
           }
@@ -377,7 +400,7 @@ function App() {
         case 'yearly':
           const month = saleDate.getMonth();
           const year = saleDate.getFullYear();
-          key = `${year}-${month}`; // Aggregate by month
+          key = `${year}-${month}`; // Agrega por mês
           label = new Date(year, month, 1).toLocaleDateString('pt-BR', { month: 'long' });
           break;
         default:
@@ -413,7 +436,7 @@ function App() {
 
   // Custom Label component for the AreaChart peaks
   const CustomLabel = (props) => {
-    const { x, y, value } = props; // Removido 'stroke' pois não é utilizado
+    const { x, y, value } = props;
     // Only display label if value is not zero to avoid clutter for empty periods
     // dy = -8 moves label slightly above the point.
     // fill is the color of the label text.
@@ -443,7 +466,6 @@ function App() {
       case 'weekly':
         newDate.setDate(displayDate.getDate() + (direction * 7)); // Move by 7 days for a week
         setDisplayDate(newDate);
-        // setDisplayWeek(getWeekNumber(newDate)); // Removido pois displayWeek não é utilizado
         break;
       case 'monthly':
         newMonth += direction;
