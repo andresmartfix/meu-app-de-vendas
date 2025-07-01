@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth'; // Removido signInWithCustomToken
 import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList // Import LabelList
@@ -139,91 +139,101 @@ function App() {
 
   // Initialize Firebase and set up authentication
   useEffect(() => {
-    try {
-      // --- INÍCIO DA ALTERAÇÃO PARA CONFIGURAÇÃO DO FIREBASE EM PRODUÇÃO ---
-      // MUITO IMPORTANTE: Substitua estes valores pelos detalhes do SEU projeto Firebase.
-      // Você pode encontrá-los no Console do Firebase > Configurações do Projeto > Seus aplicativos.
-      const firebaseConfig = {
-        apiKey: "SUA_API_KEY", // Substitua pela sua chave de API
-        authDomain: "SEU_AUTH_DOMAIN", // Substitua pelo seu domínio de autenticação
-        projectId: "SEU_PROJECT_ID", // Substitua pelo ID do seu projeto
-        storageBucket: "SEU_STORAGE_BUCKET", // Substitua pelo seu bucket de armazenamento
-        messagingSenderId: "SEU_MESSAGING_SENDER_ID", // Substitua pelo seu ID de remetente de mensagens
-        appId: "SEU_APP_ID" // Substitua pelo ID do seu aplicativo
-      };
+    let unsubscribeAuth = () => {}; // Para limpar o listener de autenticação
+    let unsubscribeSales = () => {}; // Para limpar o listener de vendas
 
-      // Verificação para depuração: Se a API Key ainda for o placeholder, mostre um erro.
-      if (firebaseConfig.apiKey === "SUA_API_KEY") {
-        console.error("ERRO DE CONFIGURAÇÃO DO FIREBASE: Por favor, substitua os placeholders em firebaseConfig no src/App.js pelos seus dados reais do Firebase.");
-        showSmartFix("Erro de configuração do Firebase. Por favor, atualize sua API Key.", 'error');
-        setLoading(false);
-        return; // Sai da função para evitar a inicialização com API Key inválida
-      }
-      // --- FIM DA ALTERAÇÃO PARA CONFIGURAÇÃO DO FIREBASE EM PRODUÇÃO ---
+    const initializeFirebase = async () => {
+      try {
+        // --- INÍCIO DA CONFIGURAÇÃO DO FIREBASE EM PRODUÇÃO (COM SEUS VALORES REAIS) ---
+        // *******************************************************************
+        // *******************************************************************
+        // MUITO IMPORTANTE: SUBSTITUA ESTES VALORES PELOS DETALHES DO SEU PROJETO FIREBASE.
+        // Você pode encontrá-los no Console do Firebase > Configurações do Projeto (ícone de engrenagem) > Seus aplicativos (secção).
+        // Clique no seu aplicativo web (ícone </>) para ver a sua configuração.
+        // *******************************************************************
+        // *******************************************************************
+        const firebaseConfig = {
+          apiKey: "AIzaSyCYW9S1e3oMczYb96dPpGeEib71wG-mBVQ",
+          authDomain: "vendas-da-loja.firebaseapp.com",
+          projectId: "vendas-da-loja",
+          storageBucket: "vendas-da-loja.firebasestorage.app",
+          messagingSenderId: "88597692449",
+          appId: "1:88597692449:web:1ba73a30e0f681ee196360",
+          measurementId: "G-BWML378TW4" // measurementId é opcional e não afeta a autenticação/Firestore
+        };
 
-      const app = initializeApp(firebaseConfig);
-      const firestore = getFirestore(app);
-      const firebaseAuth = getAuth(app);
+        // Verificação para depuração: Se a API Key ainda for o placeholder, mostre um erro.
+        // Removida a verificação de placeholder, pois o usuário já forneceu os valores.
+        // Se houver um problema com a API Key, o Firebase lançará um erro que será capturado pelo catch.
 
-      setDb(firestore);
+        const app = initializeApp(firebaseConfig);
+        const firestore = getFirestore(app);
+        const firebaseAuth = getAuth(app);
 
-      onAuthStateChanged(firebaseAuth, async (user) => {
-        if (user) {
-          setUserId(user.uid);
-          showSmartFix(`Bem-vindo, utilizador ${user.uid.substring(0, 8)}...`, 'info');
-        } else {
-          // No ambiente de produção, geralmente fazemos login anónimamente se não houver token.
-          // O __initial_auth_token é específico do ambiente Canvas e não é usado aqui.
-          try {
-            await signInAnonymously(firebaseAuth);
-          } catch (signInError) {
-            console.error("Erro ao iniciar sessão anónima no Firebase:", signInError);
-            showSmartFix("Não foi possível autenticar. Tente novamente mais tarde.", 'error');
-          } finally {
-            setLoading(false);
+        setDb(firestore);
+
+        unsubscribeAuth = onAuthStateChanged(firebaseAuth, async (user) => {
+          if (user) {
+            setUserId(user.uid);
+            showSmartFix(`Bem-vindo, utilizador ${user.uid.substring(0, 8)}...`, 'info');
+            // Agora que o usuário está autenticado, podemos começar a carregar os dados
+            setLoading(false); // Define loading como false após autenticação bem-sucedida
+          } else {
+            try {
+              console.log("Tentando login anónimo...");
+              await signInAnonymously(firebaseAuth);
+            } catch (signInError) {
+              console.error("Erro ao iniciar sessão anónima no Firebase:", signInError);
+              showSmartFix("Não foi possível autenticar. Tente novamente mais tarde.", 'error');
+              setLoading(false); // Define loading como false mesmo em caso de erro de autenticação
+            }
           }
-        }
-      });
-    } catch (err) {
-      console.error("Erro ao inicializar Firebase:", err);
-      showSmartFix("Erro ao carregar a aplicação. Verifique a sua configuração do Firebase.", 'error');
-      setLoading(false);
-    }
-  }, []);
+        });
+      } catch (err) {
+        console.error("Erro ao inicializar Firebase:", err);
+        showSmartFix("Erro ao carregar a aplicação. Verifique a sua configuração do Firebase.", 'error');
+        setLoading(false); // Define loading como false se a inicialização falhar
+      }
+    };
+
+    initializeFirebase();
+
+    // Função de limpeza para listeners
+    return () => {
+      unsubscribeAuth();
+      unsubscribeSales(); // Garante que o listener de vendas também é limpo
+    };
+  }, []); // Executa apenas uma vez na montagem do componente
 
   // Fetch sales data when userId and db are available
   useEffect(() => {
     if (db && userId) {
-      setLoading(true);
       setSmartFixMessage(''); // Clear previous messages
       try {
         // --- INÍCIO DA ALTERAÇÃO PARA ID DO APLICATIVO EM PRODUÇÃO ---
-        // O __app_id é específico do ambiente Canvas. Use um ID de aplicativo fixo para produção.
-        const appIdForCollection = 'app-id-vendas'; // ID fixo para o seu aplicativo em produção
+        // Usando um ID de aplicativo fixo para produção.
+        const appIdForCollection = 'app-id-vendas'; 
         // --- FIM DA ALTERAÇÃO PARA ID DO APLICATIVO EM PRODUÇÃO ---
 
         const salesCollectionRef = collection(db, `artifacts/${appIdForCollection}/users/${userId}/dailySales`);
         // Order by timestamp to get the latest sales by their actual date
         const q = query(salesCollectionRef, orderBy('timestamp', 'asc')); // Order by ascending for chart display
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const unsubscribeSales = onSnapshot(q, (snapshot) => {
           const salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setSales(salesData);
-          setLoading(false);
         }, (err) => {
           console.error("Erro ao carregar vendas:", err);
           showSmartFix("Não foi possível carregar as vendas. Tente recarregar a página.", 'error');
-          setLoading(false);
         });
 
-        return () => unsubscribe(); // Cleanup subscription on unmount
+        return () => unsubscribeSales(); // Cleanup subscription on unmount
       } catch (err) {
         console.error("Erro ao configurar listener de vendas:", err);
         showSmartFix("Erro ao aceder dados de vendas.", 'error');
-        setLoading(false);
       }
     }
-  }, [db, userId]);
+  }, [db, userId]); // Depende de db e userId para garantir que só roda quando estão prontos
 
   // PWA: Listen for beforeinstallprompt event
   useEffect(() => {
@@ -277,6 +287,8 @@ function App() {
     }
 
     if (!db || !userId) {
+      // Esta mensagem será mostrada se db ou userId não estiverem prontos.
+      // O loading já deve estar a lidar com isto, mas é um fallback.
       showSmartFix('Aplicação não pronta ou utilizador não autenticado. Tente novamente.', 'error');
       return;
     }
