@@ -152,8 +152,7 @@ function App() {
 
   // Initialize Firebase and set up authentication
   useEffect(() => {
-    let unsubscribeAuth = () => {}; 
-    let unsubscribeSales = () => {}; 
+    let unsubscribeAuthListener = () => {}; 
 
     const initializeFirebase = async () => {
       try {
@@ -174,14 +173,12 @@ function App() {
 
         setDb(firestore);
 
-        unsubscribeAuth = onAuthStateChanged(firebaseAuth, async (user) => {
+        unsubscribeAuthListener = onAuthStateChanged(firebaseAuth, async (user) => {
           if (user) {
             setUserId(user.uid);
             showSmartFix(`Bem-vindo, utilizador ${user.email || user.uid.substring(0, 8)}...`, 'info');
             setLoading(false); 
           } else {
-            // Se não houver utilizador logado, tentamos o login anónimo como fallback.
-            // No entanto, para login com email/password, o utilizador precisará de interagir.
             try {
               console.log("Nenhum utilizador logado. Tentando login anónimo...");
               await signInAnonymously(firebaseAuth);
@@ -203,13 +200,14 @@ function App() {
     initializeFirebase();
 
     return () => {
-      unsubscribeAuth();
-      unsubscribeSales(); 
+      unsubscribeAuthListener();
     };
   }, []); 
 
   // Fetch sales data when userId and db are available
   useEffect(() => {
+    let unsubscribeSalesListener; // Declare local variable for this useEffect
+
     if (db && userId) {
       setSmartFixMessage(''); 
       try {
@@ -218,7 +216,7 @@ function App() {
         const salesCollectionRef = collection(db, `artifacts/${appIdForCollection}/users/${userId}/dailySales`);
         const q = query(salesCollectionRef, orderBy('timestamp', 'asc')); 
 
-        unsubscribeSales = onSnapshot(q, (snapshot) => {
+        unsubscribeSalesListener = onSnapshot(q, (snapshot) => { // Assign to local variable
           const salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setSales(salesData);
         }, (err) => {
@@ -226,12 +224,21 @@ function App() {
           showSmartFix("Não foi possível carregar as vendas. Tente recarregar a página.", 'error');
         });
 
-        return () => unsubscribeSales(); 
+        return () => {
+          if (unsubscribeSalesListener) {
+            unsubscribeSalesListener();
+          }
+        };
       } catch (err) {
         console.error("Erro ao configurar listener de vendas:", err);
         showSmartFix("Erro ao aceder dados de vendas.", 'error');
       }
     }
+    return () => {
+      if (unsubscribeSalesListener) {
+        unsubscribeSalesListener();
+      }
+    };
   }, [db, userId]); 
 
   // PWA: Listen for beforeinstallprompt event
@@ -397,7 +404,7 @@ function App() {
       switch (viewMode) {
         case 'daily':
           const currentDayString = new Date(displayDate).toISOString().split('T')[0];
-          return sale.date === currentDayString;
+          return sale.date === currentDayString; // CORREÇÃO: Usar 'currentDayString'
         case 'weekly':
           const startOfWeek = getStartOfWeek(displayDate);
           const endOfWeek = getEndOfWeek(displayDate);
