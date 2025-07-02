@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  // signInAnonymously, // Removido o fallback de login anónimo
+  signInAnonymously, 
   onAuthStateChanged, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,     
   signOut                       
 } from 'firebase/auth'; 
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, Timestamp, deleteDoc, doc } from 'firebase/firestore'; // Importar deleteDoc e doc
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList 
 } from 'recharts';
@@ -169,7 +169,7 @@ function App() {
         const app = initializeApp(firebaseConfig);
         const firestore = getFirestore(app);
         const firebaseAuth = getAuth(app);
-        setAuthInstance(firebaseAuth); 
+        setAuthInstance(firebaseAuth); // Armazena a instância de autenticação
 
         setDb(firestore);
 
@@ -180,11 +180,17 @@ function App() {
             showSmartFix(`Bem-vindo, utilizador ${user.email || user.uid.substring(0, 8)}...`, 'info');
             setLoading(false); 
           } else {
-            // Removido o login anónimo automático aqui.
-            // O utilizador será direcionado para o formulário de login/registo.
-            setUserId(null); // Garante que userId é null se não houver login
-            setLoading(false); 
-            showSmartFix("Por favor, faça login ou registe-se para aceder aos seus dados.", 'info');
+            // Se não houver utilizador logado, tentamos o login anónimo como fallback.
+            // No entanto, para login com email/password, o utilizador precisará de interagir.
+            try {
+              console.log("Nenhum utilizador logado. Tentando login anónimo...");
+              await signInAnonymously(firebaseAuth);
+            } catch (signInError) {
+              console.error("Erro ao iniciar sessão anónima no Firebase:", signInError);
+              showSmartFix("Não foi possível autenticar. Por favor, faça login ou registe-se.", 'error');
+            } finally {
+              setLoading(false); 
+            }
           }
         });
       } catch (err) {
@@ -203,7 +209,7 @@ function App() {
 
   // Fetch sales data when userId and db are available
   useEffect(() => {
-    let unsubscribeSalesListener; 
+    let unsubscribeSalesListener; // Declare local variable for this useEffect
 
     if (db && userId) { // Apenas tenta buscar dados se db e userId estiverem prontos
       setSmartFixMessage(''); 
@@ -286,6 +292,11 @@ function App() {
       showSmartFix('Por favor, preencha o email e a palavra-passe.', 'warning');
       return;
     }
+    // Validação de palavra-passe no lado do cliente
+    if (password.length < 6) {
+      showSmartFix('A palavra-passe deve ter pelo menos 6 caracteres.', 'warning');
+      return;
+    }
     if (!authInstance) {
       showSmartFix('Serviço de autenticação não disponível.', 'error');
       return;
@@ -299,7 +310,14 @@ function App() {
       setIsRegistering(false); // Volta para o formulário de login
     } catch (error) {
       console.error("Erro no registo:", error);
-      showSmartFix(`Erro no registo: ${error.message}`, 'error');
+      // Mensagem de erro mais amigável para palavras-passe fracas
+      if (error.code === 'auth/weak-password') {
+        showSmartFix('A palavra-passe é muito fraca. Por favor, use uma palavra-passe mais forte (pelo menos 6 caracteres).', 'error');
+      } else if (error.code === 'auth/email-already-in-use') {
+        showSmartFix('Este email já está em uso. Tente iniciar sessão ou use outro email.', 'warning');
+      } else {
+        showSmartFix(`Erro no registo: ${error.message}`, 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -322,7 +340,14 @@ function App() {
       setPassword('');
     } catch (error) {
       console.error("Erro no login:", error);
-      showSmartFix(`Erro no login: ${error.message}`, 'error');
+      // Mensagens de erro mais amigáveis para login
+      if (error.code === 'auth/invalid-email' || error.code === 'auth/user-not-found') {
+        showSmartFix('Email inválido ou utilizador não encontrado.', 'error');
+      } else if (error.code === 'auth/wrong-password') {
+        showSmartFix('Palavra-passe incorreta.', 'error');
+      } else {
+        showSmartFix(`Erro no login: ${error.message}`, 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -346,13 +371,17 @@ function App() {
 
   // Function to add a new sale
   const handleAddSale = async () => {
+    if (!userId) { // Verifica se há um usuário autenticado antes de adicionar venda
+      showSmartFix('Por favor, inicie sessão para adicionar vendas.', 'warning');
+      return;
+    }
     if (newSaleAmount === '' || isNaN(parseFloat(newSaleAmount))) {
       showSmartFix('Por favor, insira um valor de venda válido.', 'warning');
       return;
     }
 
-    if (!db || !userId) {
-      showSmartFix('Aplicação não pronta ou utilizador não autenticado. Tente novamente.', 'error');
+    if (!db) { // Não precisa verificar userId aqui novamente, já foi feito acima
+      showSmartFix('Aplicação não pronta. Tente novamente.', 'error');
       return;
     }
 
@@ -389,6 +418,32 @@ function App() {
       setLoading(false);
     }
   };
+
+  // Função para apagar uma venda
+  const handleDeleteSale = async (saleId) => {
+    if (!db || !userId) {
+      showSmartFix('Aplicação não pronta ou utilizador não autenticado.', 'error');
+      return;
+    }
+    if (!window.confirm('Tem certeza que deseja apagar esta venda?')) { // Confirmação antes de apagar
+        return;
+    }
+
+    setLoading(true);
+    setSmartFixMessage('');
+    try {
+        const appIdForCollection = 'app-id-vendas';
+        const saleDocRef = doc(db, `artifacts/${appIdForCollection}/users/${userId}/dailySales`, saleId);
+        await deleteDoc(saleDocRef);
+        showSmartFix('Venda apagada com sucesso!', 'success');
+    } catch (e) {
+        console.error("Erro ao apagar documento: ", e);
+        showSmartFix("Erro ao apagar venda. Por favor, tente novamente.", 'error');
+    } finally {
+        setLoading(false);
+    }
+  };
+
 
   // Helper function to format currency
   const formatCurrency = (amount) => {
@@ -641,7 +696,7 @@ function App() {
 
                 <div className="mb-8 p-6 bg-purple-50 rounded-lg shadow-inner border border-purple-200">
                   <h2 className="text-2xl font-bold text-purple-700 mb-4 flex items-center">
-                    <svg className="w-6 h-6 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.592 1M12 8V7m0 1v8m0 4v1m-6-10H4m4-2H6m7 0h4m-4 2h2M6 20H4m2-2h2m0-6h2m-2 4h2m-2-6h-2m2 0H8m6 0h2m-2 2h2m-2 0H8"></path></svg>
+                    <svg className="w-6 h-6 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.592 1M12 8V7m0 1v8m0 4v1m-6-10H4m4-2H6m7 0h4m-4 2h2M6 20H4m2-2h2m0-6h2m-2 4h2m-2-6h-2m2 0H8m6 0h2m-2 2h2m-2 0H8"></path></svg>
                     Registar Nova Venda
                   </h2>
                   <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -814,7 +869,7 @@ function App() {
 
                 <div className="bg-white p-6 rounded-xl shadow-lg border border-purple-300">
                   <h2 className="text-2xl font-bold text-purple-700 mb-4 flex items-center">
-                    <svg className="w-6 h-6 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                    <svg className="w-6 h-6 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
                     Vendas Detalhadas
                   </h2>
                   {filteredSales.length > 0 ? (
@@ -825,6 +880,13 @@ function App() {
                             {sale.timestamp ? new Date(sale.timestamp.toDate()).toLocaleString('pt-BR') : 'Data Indisponível'}
                           </span>
                           <span className="font-semibold text-xl">{formatCurrency(sale.amount)}</span>
+                          <button
+                            onClick={() => handleDeleteSale(sale.id)}
+                            className="ml-4 p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition duration-200"
+                            title="Apagar Venda"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          </button>
                         </li>
                       ))}
                     </ul>
