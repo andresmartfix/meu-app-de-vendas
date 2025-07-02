@@ -2,15 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInAnonymously, 
+  // signInAnonymously, // Removido o fallback de login anónimo
   onAuthStateChanged, 
-  createUserWithEmailAndPassword, // Importar para registo
-  signInWithEmailAndPassword,     // Importar para login
-  signOut                       // Importar para logout
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword,     
+  signOut                       
 } from 'firebase/auth'; 
 import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList // Import LabelList
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList 
 } from 'recharts';
 
 // SmartFix Component for notifications
@@ -26,8 +26,8 @@ const SmartFix = ({ message, type, onClose }) => {
       }
       timeoutRef.current = setTimeout(() => {
         setIsVisible(false);
-        onClose(); // Call parent's onClose to clear message state
-      }, 5000); // Message disappears after 5 seconds
+        onClose(); 
+      }, 5000); 
     } else {
       setIsVisible(false);
     }
@@ -100,10 +100,10 @@ function App() {
   const [smartFixType, setSmartFixType] = useState('info');
 
   // New state variables for navigation and adding past sales
-  const [viewMode, setViewMode] = useState('daily'); // 'daily', 'weekly', 'monthly', 'yearly'
-  const [displayDate, setDisplayDate] = useState(new Date()); // For 'daily' view
-  const [displayMonth, setDisplayMonth] = useState(new Date().getMonth()); // For 'monthly' view
-  const [displayYear, setDisplayYear] = useState(new Date().getFullYear()); // For 'monthly' and 'yearly' view
+  const [viewMode, setViewMode] = useState('daily'); 
+  const [displayDate, setDisplayDate] = useState(new Date()); 
+  const [displayMonth, setDisplayMonth] = useState(new Date().getMonth()); 
+  const [displayYear, setDisplayYear] = useState(new Date().getFullYear()); 
 
   const [selectedSaleDate, setSelectedSaleDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -116,13 +116,13 @@ function App() {
   // Auth states for email/password
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false); // To toggle between login and register forms
-  const [authInstance, setAuthInstance] = useState(null); // Store auth instance
+  const [isRegistering, setIsRegistering] = useState(false); 
+  const [authInstance, setAuthInstance] = useState(null); 
 
   // Helper function to get the week number (ISO week date standard)
   function getWeekNumber(d) {
     d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7)); // Set to nearest Thursday: current date + 4 - current day number (0-6)
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7)); 
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     return weekNo;
@@ -131,16 +131,16 @@ function App() {
   // Helper function to get the start of the week (Sunday)
   const getStartOfWeek = (date) => {
     const d = new Date(date);
-    const day = d.getDay(); // 0 for Sunday, 6 for Saturday
-    const diff = d.getDate() - day; // Adjust date to Sunday of the current week
+    const day = d.getDay(); 
+    const diff = d.getDate() - day; 
     return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
   };
 
   // Helper function to get the end of the week (Saturday)
   const getEndOfWeek = (date) => {
     const d = new Date(date);
-    const day = d.getDay(); // 0 for Sunday, 6 for Saturday
-    const diff = d.getDate() + (6 - day); // Adjust date to Saturday of the current week
+    const day = d.getDay(); 
+    const diff = d.getDate() + (6 - day); 
     return new Date(d.getFullYear(), d.getMonth(), diff, 23, 59, 59, 999);
   };
 
@@ -169,25 +169,22 @@ function App() {
         const app = initializeApp(firebaseConfig);
         const firestore = getFirestore(app);
         const firebaseAuth = getAuth(app);
-        setAuthInstance(firebaseAuth); // Armazena a instância de autenticação
+        setAuthInstance(firebaseAuth); 
 
         setDb(firestore);
 
         unsubscribeAuthListener = onAuthStateChanged(firebaseAuth, async (user) => {
           if (user) {
             setUserId(user.uid);
+            // Melhoria: Mostrar email do utilizador se disponível
             showSmartFix(`Bem-vindo, utilizador ${user.email || user.uid.substring(0, 8)}...`, 'info');
             setLoading(false); 
           } else {
-            try {
-              console.log("Nenhum utilizador logado. Tentando login anónimo...");
-              await signInAnonymously(firebaseAuth);
-            } catch (signInError) {
-              console.error("Erro ao iniciar sessão anónima no Firebase:", signInError);
-              showSmartFix("Não foi possível autenticar. Por favor, faça login ou registe-se.", 'error');
-            } finally {
-              setLoading(false); 
-            }
+            // Removido o login anónimo automático aqui.
+            // O utilizador será direcionado para o formulário de login/registo.
+            setUserId(null); // Garante que userId é null se não houver login
+            setLoading(false); 
+            showSmartFix("Por favor, faça login ou registe-se para aceder aos seus dados.", 'info');
           }
         });
       } catch (err) {
@@ -206,9 +203,9 @@ function App() {
 
   // Fetch sales data when userId and db are available
   useEffect(() => {
-    let unsubscribeSalesListener; // Declare local variable for this useEffect
+    let unsubscribeSalesListener; 
 
-    if (db && userId) {
+    if (db && userId) { // Apenas tenta buscar dados se db e userId estiverem prontos
       setSmartFixMessage(''); 
       try {
         const appIdForCollection = 'app-id-vendas'; 
@@ -216,7 +213,7 @@ function App() {
         const salesCollectionRef = collection(db, `artifacts/${appIdForCollection}/users/${userId}/dailySales`);
         const q = query(salesCollectionRef, orderBy('timestamp', 'asc')); 
 
-        unsubscribeSalesListener = onSnapshot(q, (snapshot) => { // Assign to local variable
+        unsubscribeSalesListener = onSnapshot(q, (snapshot) => { 
           const salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setSales(salesData);
         }, (err) => {
@@ -233,6 +230,9 @@ function App() {
         console.error("Erro ao configurar listener de vendas:", err);
         showSmartFix("Erro ao aceder dados de vendas.", 'error');
       }
+    } else {
+        // Se userId ou db não estiverem prontos, limpa as vendas para evitar mostrar dados antigos
+        setSales([]); 
     }
     return () => {
       if (unsubscribeSalesListener) {
@@ -404,7 +404,7 @@ function App() {
       switch (viewMode) {
         case 'daily':
           const currentDayString = new Date(displayDate).toISOString().split('T')[0];
-          return sale.date === currentDayString; // CORREÇÃO: Usar 'currentDayString'
+          return sale.date === currentDayString; 
         case 'weekly':
           const startOfWeek = getStartOfWeek(displayDate);
           const endOfWeek = getEndOfWeek(displayDate);
