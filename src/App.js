@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInAnonymously, 
+  // signInAnonymously, // Removido o fallback de login anónimo automático
   onAuthStateChanged, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,     
   signOut                       
 } from 'firebase/auth'; 
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, Timestamp, deleteDoc, doc } from 'firebase/firestore'; // Importar deleteDoc e doc
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, Timestamp, deleteDoc, doc } from 'firebase/firestore'; 
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList 
 } from 'recharts';
@@ -173,24 +173,18 @@ function App() {
 
         setDb(firestore);
 
-        unsubscribeAuthListener = onAuthStateChanged(firebaseAuth, async (user) => {
+        unsubscribeAuthListener = onAuthStateChanged(firebaseAuth, (user) => {
           if (user) {
             setUserId(user.uid);
             // Melhoria: Mostrar email do utilizador se disponível
             showSmartFix(`Bem-vindo, utilizador ${user.email || user.uid.substring(0, 8)}...`, 'info');
             setLoading(false); 
           } else {
-            // Se não houver utilizador logado, tentamos o login anónimo como fallback.
-            // No entanto, para login com email/password, o utilizador precisará de interagir.
-            try {
-              console.log("Nenhum utilizador logado. Tentando login anónimo...");
-              await signInAnonymously(firebaseAuth);
-            } catch (signInError) {
-              console.error("Erro ao iniciar sessão anónima no Firebase:", signInError);
-              showSmartFix("Não foi possível autenticar. Por favor, faça login ou registe-se.", 'error');
-            } finally {
-              setLoading(false); 
-            }
+            // Quando o utilizador não está logado (após logout ou primeira visita)
+            // Não faz login anónimo automático aqui.
+            setUserId(null); // Garante que userId é null
+            setLoading(false); 
+            showSmartFix("Por favor, faça login ou registe-se para aceder aos seus dados.", 'info');
           }
         });
       } catch (err) {
@@ -725,7 +719,7 @@ function App() {
                     onClick={handleAddSale}
                     className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 active:scale-95 flex items-center justify-center text-lg"
                   >
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     Adicionar Venda
                   </button>
                 </div>
@@ -777,7 +771,7 @@ function App() {
                     onClick={() => handleNavigate(-1)}
                     className="p-2 rounded-full bg-purple-300 text-purple-800 hover:bg-purple-400 transition duration-200"
                   >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
                   </button>
                   <h2 className="text-xl font-bold text-purple-800 text-center flex-grow">
                     Vendas de: {formatDisplayPeriod()}
@@ -786,13 +780,13 @@ function App() {
                     onClick={() => handleNavigate(1)}
                     className="p-2 rounded-full bg-purple-300 text-purple-800 hover:bg-purple-400 transition duration-200"
                   >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
                   </button>
                 </div>
 
                 <div className="bg-purple-100 p-6 rounded-xl shadow-lg border border-purple-300 mb-8">
                   <h2 className="text-xl font-semibold text-purple-700 mb-3 flex items-center">
-                    <svg className="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 4a2 2 0 114 0v12a4 4 0 11-8 0V4a2 2 0 114 0v12a4 4 0 11-8 0"></path></svg>
+                    <svg className="w-5 h-5 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 4a2 2 0 114 0v12a4 4 0 11-8 0V4a2 2 0 114 0v12a4 4 0 11-8 0"></path></svg>
                     Total do Período
                   </h2>
                   <p className="text-4xl font-bold text-purple-900">
@@ -803,7 +797,7 @@ function App() {
                 {/* Gráfico de Vendas (Gráfico de Área) */}
                 <div className="bg-white p-6 rounded-xl shadow-lg border border-purple-300 mb-8">
                     <h2 className="text-2xl font-bold text-purple-700 mb-4 flex items-center">
-                        <svg className="w-6 h-6 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M18 14H5a2 2 0 00-2 2v2a2 2 0 002 2h14a2 2 0 002-2v-2a2 2 0 00-2-2z"></path></svg>
+                        <svg className="w-6 h-6 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M18 14H5a2 2 0 00-2 2v2a2 2 0 002 2h14a2 2 0 002-2v-2a2 2 0 00-2-2z"></path></svg>
                         Análise Visual de Vendas
                     </h2>
                     {chartData.length > 0 ? (
@@ -885,7 +879,7 @@ function App() {
                             className="ml-4 p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition duration-200"
                             title="Apagar Venda"
                           >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 000-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clipRule="evenodd"></path></svg>
                           </button>
                         </li>
                       ))}
