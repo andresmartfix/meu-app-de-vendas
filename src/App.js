@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  // signInAnonymously, // Removido o fallback de login anónimo automático
   onAuthStateChanged, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,     
@@ -87,6 +86,65 @@ const SmartFix = ({ message, type, onClose }) => {
   );
 };
 
+// Componente da Janela Flutuante para Adicionar Venda Rápida
+const FloatingSaleModal = ({ isOpen, onClose, onQuickAddSale, loading, showSmartFix }) => {
+  const [amount, setAmount] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isOpen]);
+
+  const handleAdd = async () => {
+    if (amount === '' || isNaN(parseFloat(amount))) {
+      showSmartFix('Por favor, insira um valor válido.', 'warning');
+      return;
+    }
+    await onQuickAddSale(parseFloat(amount));
+    setAmount(''); // Limpa o campo após adicionar
+    onClose(); // Fecha o modal
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4">
+      <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm">
+        <h3 className="text-2xl font-bold text-purple-700 mb-4 text-center">Adicionar Venda Rápida</h3>
+        <input
+          ref={inputRef}
+          type="number"
+          step="0.01"
+          className="w-full p-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-lg shadow-sm mb-4"
+          placeholder="Valor da Venda (hoje)"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              handleAdd();
+            }
+          }}
+        />
+        <button
+          onClick={handleAdd}
+          className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 active:scale-95 flex items-center justify-center text-lg mb-3"
+          disabled={loading}
+        >
+          {loading ? 'Adicionando...' : 'Adicionar Venda'}
+        </button>
+        <button
+          onClick={onClose}
+          className="w-full text-gray-600 hover:text-gray-800 font-semibold py-2 px-4 rounded-lg transition duration-200"
+        >
+          Fechar
+        </button>
+      </div>
+    </div>
+  );
+};
+
 
 function App() {
   const [db, setDb] = useState(null);
@@ -118,6 +176,9 @@ function App() {
   const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false); 
   const [authInstance, setAuthInstance] = useState(null); 
+
+  // Estado para controlar a visibilidade da janela flutuante
+  const [showFloatingSaleModal, setShowFloatingSaleModal] = useState(false);
 
   // Helper function to get the week number (ISO week date standard)
   function getWeekNumber(d) {
@@ -363,7 +424,7 @@ function App() {
     }
   };
 
-  // Function to add a new sale
+  // Function to add a new sale (from main form)
   const handleAddSale = async () => {
     if (!userId) { // Verifica se há um usuário autenticado antes de adicionar venda
       showSmartFix('Por favor, inicie sessão para adicionar vendas.', 'warning');
@@ -374,7 +435,7 @@ function App() {
       return;
     }
 
-    if (!db) { // Não precisa verificar userId aqui novamente, já foi feito acima
+    if (!db) { 
       showSmartFix('Aplicação não pronta. Tente novamente.', 'error');
       return;
     }
@@ -412,6 +473,48 @@ function App() {
       setLoading(false);
     }
   };
+
+  // Nova função para adicionar venda rápida (do modal)
+  const handleQuickAddSale = async (amount) => {
+    if (!userId) {
+      showSmartFix('Por favor, inicie sessão para adicionar vendas.', 'warning');
+      return;
+    }
+    if (!db) {
+      showSmartFix('Aplicação não pronta. Tente novamente.', 'error');
+      return;
+    }
+
+    setLoading(true);
+    setSmartFixMessage('');
+    try {
+      const saleDateTime = new Date(); // Data de hoje
+      const todayDateString = saleDateTime.toISOString().split('T')[0];
+      
+      const appIdForCollection = 'app-id-vendas'; 
+
+      const salesCollectionRef = collection(db, `artifacts/${appIdForCollection}/users/${userId}/dailySales`);
+
+      await addDoc(salesCollectionRef, {
+        amount: amount,
+        timestamp: Timestamp.fromDate(saleDateTime), 
+        date: todayDateString 
+      });
+      showSmartFix('Venda rápida adicionada com sucesso!', 'success');
+      // Atualiza a visualização para o dia de hoje se a venda foi para hoje
+      setDisplayDate(new Date()); 
+      setDisplayMonth(new Date().getMonth()); 
+      setDisplayYear(new Date().getFullYear()); 
+      setViewMode('daily'); 
+
+    } catch (e) {
+      console.error("Erro ao adicionar documento rápido: ", e);
+      showSmartFix("Erro ao adicionar venda rápida. Por favor, tente novamente.", 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   // Função para apagar uma venda
   const handleDeleteSale = async (saleId) => {
@@ -624,6 +727,15 @@ function App() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center p-4 font-sans text-gray-800">
       <SmartFix message={smartFixMessage} type={smartFixType} onClose={() => setSmartFixMessage('')} />
 
+      {/* Janela Flutuante para Adicionar Venda Rápida */}
+      <FloatingSaleModal 
+        isOpen={showFloatingSaleModal}
+        onClose={() => setShowFloatingSaleModal(false)}
+        onQuickAddSale={handleQuickAddSale}
+        loading={loading}
+        showSmartFix={showSmartFix}
+      />
+
       <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-4xl backdrop-filter backdrop-blur-sm bg-opacity-90 border border-purple-300">
         <h1 className="text-4xl font-extrabold text-center text-purple-800 mb-8 tracking-tight">
           💸 Minhas Vendas 💸
@@ -723,6 +835,19 @@ function App() {
                     Adicionar Venda
                   </button>
                 </div>
+
+                {/* Botão para abrir a janela flutuante */}
+                {userId && ( // Só mostra o botão se o utilizador estiver logado
+                  <div className="mb-8 text-center">
+                    <button
+                      onClick={() => setShowFloatingSaleModal(true)}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 active:scale-95 flex items-center justify-center text-lg mx-auto"
+                    >
+                      <svg className="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd"></path></svg>
+                      Adicionar Venda Rápida
+                    </button>
+                  </div>
+                )}
 
                 {/* Seletor de Modo de Visualização */}
                 <div className="mb-6 flex justify-center space-x-4">
